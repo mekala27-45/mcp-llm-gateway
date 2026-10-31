@@ -1,0 +1,22 @@
+[project]
+name = "customer-server"
+version = "1.0.0"
+description = "Task 1: an MCP server with strict tool schemas, served over stdio."
+license = "Apache-2.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "anyio==4.15.1",
+    "gateway-common",
+    "mcp==2.3.0",
+    "pydantic==2.14.2",
+]
+
+[project.scripts]
+customer-server = "customer_server.__main__:main"
+
+[tool.uv.sources]
+gateway-common = { workspace = true }
+
+[build-system]
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"
