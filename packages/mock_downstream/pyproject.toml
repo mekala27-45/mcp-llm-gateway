@@ -1,0 +1,20 @@
+[project]
+name = "mock-downstream"
+version = "1.0.0"
+description = "A mock MCP server on Streamable HTTP for the gateway in Task 2."
+license = "Apache-2.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "anyio==4.15.1",
+    "gateway-common",
+    "mcp==2.3.0",
+    "starlette==1.10.0",
+    "uvicorn==0.54.0",
+]
+
+[tool.uv.sources]
+gateway-common = { workspace = true }
+
+[build-system]
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"

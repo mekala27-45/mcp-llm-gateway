@@ -4,7 +4,10 @@ version = "1.0.0"
 description = "JSON logging and a background server helper shared by the services in this repository."
 license = "Apache-2.0"
 requires-python = "==3.12.*"
-dependencies = []
+dependencies = [
+    "starlette==1.10.0",
+    "uvicorn==0.54.0",
+]
 
 [build-system]
 requires = ["hatchling==1.33.0"]
