@@ -57,12 +57,12 @@ def test_control_and_zero_width_characters_are_escaped(
     stream_logger: tuple[logging.Logger, io.StringIO],
 ) -> None:
     logger, stream = stream_logger
-    log_event(logger, "decision", tool="admin​_reset\nkey")
+    log_event(logger, "decision", tool="admin\u200b_reset\nkey")
 
     line = stream.getvalue()
     assert line.count("\n") == 1
     assert "\\u200b" in line
-    assert json.loads(line)["tool"] == "admin​_reset\nkey"
+    assert json.loads(line)["tool"] == "admin\u200b_reset\nkey"
 
 
 def test_configure_sends_records_to_stderr_only(capsys: pytest.CaptureFixture[str]) -> None:
