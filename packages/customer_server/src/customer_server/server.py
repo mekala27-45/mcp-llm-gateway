@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -27,6 +28,7 @@ from mcp.types import (
 )
 from pydantic import BaseModel, ValidationError
 
+from customer_server.guard import Wire
 from customer_server.ledger import Ledger, RefundRejected, UnknownCustomer
 from customer_server.models import FieldError, GetCustomerRecord, TriggerRefund, field_errors
 from gateway_common.logs import configure, log_event, request_id
@@ -221,8 +223,8 @@ def build_server(
     )
 
 
-def serve() -> None:
-    """Serve on stdin and stdout until the client closes its end."""
+def serve(wire: Wire) -> None:
+    """Serve on the private descriptors until the client closes its end."""
     configure(os.environ.get("LOG_LEVEL", "INFO"))
     raw_mode = os.environ.get("VALIDATION_ERRORS", "protocol")
     if raw_mode not in ("protocol", "tool"):
@@ -232,9 +234,12 @@ def serve() -> None:
     test_tools = os.environ.get("CUSTOMER_SERVER_TEST_TOOLS") == "1"
     server = build_server(Ledger(), mode, test_tools)
     log_event(logger, "serving on stdio", validation_errors=mode, test_tools=test_tools)
-    anyio.run(_serve, server)
+    anyio.run(_serve, server, wire)
 
 
-async def _serve(server: Server[Any]) -> None:
-    async with stdio_server() as (read_stream, write_stream):
+async def _serve(server: Server[Any], wire: Wire) -> None:
+    reader = io.TextIOWrapper(os.fdopen(wire.stdin, "rb"), encoding="utf-8", errors="replace")
+    writer = io.TextIOWrapper(os.fdopen(wire.stdout, "wb"), encoding="utf-8", newline="\n")
+    stdin, stdout = anyio.wrap_file(reader), anyio.wrap_file(writer)
+    async with stdio_server(stdin=stdin, stdout=stdout) as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())

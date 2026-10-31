@@ -1,10 +1,9 @@
-"""Entry point for the customer server."""
+"""Entry point for the customer server. The protocol descriptors are claimed first."""
 
 import argparse
 import sys
 
-from customer_server.selftest import run_self_test
-from customer_server.server import serve
+from customer_server.guard import claim_stdio
 
 
 def main() -> None:
@@ -18,8 +17,16 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.self_test:
+        from customer_server.selftest import run_self_test
+
         sys.exit(run_self_test())
-    serve()
+
+    wire = claim_stdio()
+    # Imported only now, so nothing the SDK or its dependencies print while
+    # loading can reach the protocol stream.
+    from customer_server.server import serve
+
+    serve(wire)
 
 
 if __name__ == "__main__":
