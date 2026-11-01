@@ -37,6 +37,7 @@ WITH_PII = (
 )
 SECRET = "bench-secret-0123456789abcdef0123456789"
 TOKEN_INTERVAL_MS = 20
+GATEWAY = ["llm_gateway", "serve"]
 
 
 def free_port() -> int:
@@ -145,7 +146,14 @@ def first_token(
     return arrivals[0], arrivals
 
 
-def latency(requests: int, env: dict[str, str]) -> dict[str, Any]:
+def add_tenant(env: dict[str, str]) -> dict[str, str]:
+    """A tenant for the bench, and the header that carries its key."""
+    command = [sys.executable, "-m", "llm_gateway", "add-tenant", "bench"]
+    key = subprocess.run(command, env=env, capture_output=True, text=True, check=True).stdout
+    return {"authorization": f"Bearer {key.strip()}"}
+
+
+def latency(requests: int, env: dict[str, str], headers: dict[str, str]) -> dict[str, Any]:
     text = PROSE * 2
     mock_port, gateway_port = free_port(), free_port()
     mock_args = ["mock_providers", "--token-interval-ms", str(TOKEN_INTERVAL_MS), "--text", text]
@@ -153,12 +161,11 @@ def latency(requests: int, env: dict[str, str]) -> dict[str, Any]:
     body = {"model": "mock", "messages": [{"role": "user", "content": "status?"}], "stream": True}
     direct_url = f"http://127.0.0.1:{mock_port}/v1/chat/completions"
     gateway_url = f"http://127.0.0.1:{gateway_port}/v1/chat/completions"
-    with process(mock_args, mock_port, env), process(["llm_gateway"], gateway_port, gateway_env):
-        headers: dict[str, str] = {}
+    with process(mock_args, mock_port, env), process(GATEWAY, gateway_port, gateway_env):
         for _ in range(3):
-            first_token(direct_url, body, headers)
+            first_token(direct_url, body, {})
             first_token(gateway_url, body, headers)
-        direct = [first_token(direct_url, body, headers) for _ in range(requests)]
+        direct = [first_token(direct_url, body, {}) for _ in range(requests)]
         gateway = [first_token(gateway_url, body, headers) for _ in range(requests)]
 
     direct_ttft = [ms(t) for t, _ in direct]
@@ -185,7 +192,7 @@ def latency(requests: int, env: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def memory(megabytes: int, env: dict[str, str]) -> dict[str, Any]:
+def memory(megabytes: int, env: dict[str, str], headers: dict[str, str]) -> dict[str, Any]:
     block = PROSE * (4096 // len(PROSE) + 1)
     repeat = megabytes * 1_000_000 // len(block)
     mock_port, gateway_port = free_port(), free_port()
@@ -199,21 +206,24 @@ def memory(megabytes: int, env: dict[str, str]) -> dict[str, Any]:
         block,
     ]
     gateway_env = {**env, "PRIMARY_BASE_URL": f"http://127.0.0.1:{mock_port}/v1"}
+    # The mock counts one chunk as one token, and the gateway bounds every reply, so the
+    # bound is set to cover the whole stream.
     body = {
         "model": "mock",
         "messages": [{"role": "user", "content": "everything"}],
         "stream": True,
+        "max_tokens": 2 * repeat + 8,
     }
     url = f"http://127.0.0.1:{gateway_port}/v1/chat/completions"
     received = 0
     with (
         process(mock_args, mock_port, env),
-        process(["llm_gateway"], gateway_port, gateway_env) as gateway,
+        process(GATEWAY, gateway_port, gateway_env) as gateway,
     ):
-        httpx.post(url, json={**body, "max_tokens": 4}, timeout=60)
+        httpx.post(url, json={**body, "max_tokens": 4}, headers=headers, timeout=60)
         before = rss_mb(gateway.pid)
         started = time.perf_counter()
-        with httpx.stream("POST", url, json=body, timeout=600) as response:
+        with httpx.stream("POST", url, json=body, headers=headers, timeout=600) as response:
             for piece in response.iter_bytes():
                 received += len(piece)
         elapsed = time.perf_counter() - started
@@ -243,13 +253,14 @@ def main() -> None:
             "LLM_GATEWAY_DB": f"{scratch}/gateway.db",
             "LOG_LEVEL": "WARNING",
         }
+        headers = add_tenant(env)
         results = {
             "date": datetime.now(UTC).isoformat(timespec="seconds"),
             "machine": machine(),
             "setting": "quick" if args.quick else "full",
             "redactor": redactor_alone(redactor_mb),
-            "latency": latency(requests, env),
-            "memory": memory(stream_mb, env),
+            "latency": latency(requests, env, headers),
+            "memory": memory(stream_mb, env, headers),
         }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(results, indent=2) + "\n")

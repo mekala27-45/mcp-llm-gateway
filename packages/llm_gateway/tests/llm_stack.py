@@ -1,18 +1,30 @@
-"""Starts two mock providers with an LLM gateway in front of them, and reads streamed replies."""
+"""Starts two mock providers with an LLM gateway in front of them, adds one tenant, and reads
+streamed replies and the gateway's SQLite file."""
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import json
-from collections.abc import Iterator
-from contextlib import contextmanager
+import socket
+import sqlite3
+import tempfile
+import time
+from collections.abc import Callable, Iterator
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
 from gateway_common.serving import background_server
 from llm_gateway.app import create_app
+from llm_gateway.db import Database
+from llm_gateway.limiter import wall_clock_ms
 from llm_gateway.settings import ProviderConfig, Settings
+from llm_gateway.tenants import TenantStore
 from mock_providers.app import MockProvider
 
 SECRET = "llm-gateway-test-secret-0123456789abcdef"
@@ -24,23 +36,83 @@ class LlmStack:
     primary: MockProvider
     backup: MockProvider
     settings: Settings
+    key: str
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"authorization": f"Bearer {self.key}"}
+
+    def rows(self, sql: str) -> list[tuple[Any, ...]]:
+        """Rows from the gateway's SQLite file, read the way an operator would read them."""
+        with closing(sqlite3.connect(self.settings.db_path)) as db:
+            return db.execute(sql).fetchall()
+
+    def logged(self, count: int = 1) -> list[tuple[Any, ...]]:
+        """The request log once it has count rows: route, attempts, outcome, status, tokens.
+        A stream is logged after its last byte, so this waits for it."""
+        sql = "SELECT route, attempts, outcome, status, tokens FROM request_log ORDER BY rowid"
+        eventually(lambda: len(self.rows(sql)) >= count)
+        return self.rows(sql)
+
+
+def add_tenant(db_path: str, tenant_id: str) -> str:
+    async def add() -> str:
+        db = await Database.open(db_path)
+        try:
+            return await TenantStore(db, SECRET).add(tenant_id)
+        finally:
+            await db.close()
+
+    return asyncio.run(add())
+
+
+def eventually(condition: Callable[[], bool], timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "the condition never held"
+        time.sleep(0.02)
+
+
+def refused_url() -> str:
+    """A local address where nothing listens."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    return f"http://127.0.0.1:{port}/v1"
 
 
 @contextmanager
-def running_llm_stack(**overrides: Any) -> Iterator[LlmStack]:
+def running_llm_stack(
+    clock: Callable[[], int] = wall_clock_ms,
+    timeout_ms: int = 3000,
+    primary_url: str | None = None,
+    **overrides: Any,
+) -> Iterator[LlmStack]:
+    """primary_url points the gateway somewhere other than the primary mock."""
     primary, backup = MockProvider("primary"), MockProvider("backup")
-    with (
-        background_server(primary.app()) as primary_url,
-        background_server(backup.app()) as backup_url,
-    ):
+    # Both mocks share one server: a test starts two servers instead of three.
+    mocks = Starlette(routes=[Mount("/primary", primary.app()), Mount("/backup", backup.app())])
+    with tempfile.TemporaryDirectory() as scratch, background_server(mocks) as mock_url:
+        primary_config = ProviderConfig(
+            "primary",
+            primary_url or f"{mock_url}/primary/v1",
+            api_key="mock-primary-key",
+            timeout_ms=timeout_ms,
+        )
+        backup_config = ProviderConfig(
+            "backup", f"{mock_url}/backup/v1", api_key="mock-backup-key", timeout_ms=timeout_ms
+        )
         settings = Settings(
             secret=SECRET,
-            primary=ProviderConfig("primary", f"{primary_url}/v1"),
-            backup=ProviderConfig("backup", f"{backup_url}/v1"),
-            **overrides,
+            primary=primary_config,
+            backup=backup_config,
+            db_path=f"{scratch}/gateway.db",
         )
-        with background_server(create_app(settings)) as gateway_url:
-            yield LlmStack(f"{gateway_url}/v1/chat/completions", primary, backup, settings)
+        settings = dataclasses.replace(settings, **overrides)
+        key = add_tenant(settings.db_path, "acme")
+        with background_server(create_app(settings, clock=clock)) as gateway_url:
+            url = f"{gateway_url}/v1/chat/completions"
+            yield LlmStack(url, primary, backup, settings, key)
 
 
 def chat(stream: bool = True, **extra: Any) -> dict[str, Any]:

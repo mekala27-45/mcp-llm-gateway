@@ -34,9 +34,12 @@ class _Choice:
 class ChunkRewriter:
     """Keeps one redaction state per choice and per tool call argument stream."""
 
-    def __init__(self, count_tokens: Callable[[str], int] = _utf8_length) -> None:
+    def __init__(
+        self, count_tokens: Callable[[str], int] = _utf8_length, forward_usage: bool = True
+    ) -> None:
         self._choices: dict[int, _Choice] = {}
         self._count = count_tokens
+        self._forward_usage = forward_usage
         self._envelope: dict[str, Any] = {}
         self.completion_tokens = 0
         self.usage: dict[str, Any] | None = None
@@ -56,9 +59,12 @@ class ChunkRewriter:
 
     def rewrite(self, chunk: dict[str, Any]) -> list[dict[str, Any]]:
         """The chunks to send for one upstream chunk. Text released by a finish goes first."""
-        self._envelope = {key: chunk[key] for key in _ENVELOPE if key in chunk}
         if isinstance(chunk.get("usage"), dict):
             self.usage = chunk["usage"]
+            if not self._forward_usage and not chunk.get("choices"):
+                # The gateway asked for this usage chunk itself, and the client did not.
+                return []
+        self._envelope = {key: chunk[key] for key in _ENVELOPE if key in chunk}
         released: list[dict[str, Any]] = []
         for choice in chunk.get("choices") or []:
             if isinstance(choice, dict) and isinstance(choice.get("delta"), dict):
@@ -144,6 +150,8 @@ def _rewrite_event(event: Event, rewriter: ChunkRewriter) -> list[bytes]:
     if "error" in chunk:
         raise UpstreamStreamError
     rewritten = rewriter.rewrite(chunk)
+    if not rewritten:
+        return []
     return [_encode(c) for c in rewritten[:-1]] + [_encode(rewritten[-1], event)]
 
 
@@ -163,16 +171,22 @@ async def rewrite_stream(
         yield _encode(chunk)
 
 
-def redact_completion(payload: dict[str, Any], counts: Counter[str]) -> dict[str, Any]:
-    """Redact a whole, non streamed completion in place."""
+def redact_completion(
+    payload: dict[str, Any], counts: Counter[str], count_tokens: Callable[[str], int] = _utf8_length
+) -> int:
+    """Redact a whole, non streamed completion in place. Returns the tokens it generated, as
+    counted, for when the provider reports no usage."""
+    generated = 0
     for choice in payload.get("choices") or []:
         message = choice.get("message") if isinstance(choice, dict) else None
         if not isinstance(message, dict):
             continue
         if isinstance(message.get("content"), str):
+            generated += count_tokens(message["content"])
             message["content"] = redact(message["content"], counts)
         for call in message.get("tool_calls") or []:
             function = call.get("function") if isinstance(call, dict) else None
             if isinstance(function, dict) and isinstance(function.get("arguments"), str):
+                generated += count_tokens(function["arguments"])
                 function["arguments"] = redact(function["arguments"], counts)
-    return payload
+    return generated

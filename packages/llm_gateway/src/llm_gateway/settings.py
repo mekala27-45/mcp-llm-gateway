@@ -27,7 +27,6 @@ class Settings:
     db_path: str = "data/llm_gateway.db"
     tokens_per_minute: int = 50_000
     default_max_tokens: int = 1024
-    max_tokens_cap: int = 16_384
     max_body_bytes: int = 1 << 20
 
     def __post_init__(self) -> None:

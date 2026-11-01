@@ -43,14 +43,18 @@ class GatewayError(Exception):
         }
 
 
-INTERNAL = GatewayError(
-    "internal_error", "internal_error", "Something failed on our side. Try again."
-)
-UPSTREAM = GatewayError(
-    "upstream_unavailable",
-    "no_provider_available",
-    "No provider could serve this request. Try again.",
-)
+def internal_error() -> GatewayError:
+    return GatewayError(
+        "internal_error", "internal_error", "Something failed on our side. Try again."
+    )
+
+
+def upstream_unavailable() -> GatewayError:
+    return GatewayError(
+        "upstream_unavailable",
+        "no_provider_available",
+        "No provider could serve this request. Try again.",
+    )
 
 
 def error_response(error: GatewayError, request_id: str) -> JSONResponse:

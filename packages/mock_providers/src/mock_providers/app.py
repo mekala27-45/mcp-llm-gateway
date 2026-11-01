@@ -37,7 +37,12 @@ def tokens(text: str) -> list[str]:
 
 @dataclass
 class Behavior:
-    """What the next requests to a mock provider get."""
+    """What the next requests to a mock provider get.
+
+    first_byte_delay is the wait before the first byte of the body for a stream, whose headers
+    go at once, and before the whole reply otherwise. break_after sends an error event after
+    that many content pieces and ends the stream.
+    """
 
     status: int = 200
     first_byte_delay: float = 0.0
@@ -50,6 +55,7 @@ class Behavior:
     retry_after: int | None = None
     error_body: str = LEAKY_ERROR
     report_usage: bool = True
+    break_after: int | None = None
 
 
 @dataclass
@@ -63,6 +69,17 @@ class Seen:
     received_at: float = field(default_factory=time.monotonic)
     finished: bool = False
     disconnected: bool = False
+
+
+async def _hangs_up(request: Request, seconds: float) -> bool:
+    """Wait like a slow provider. True if the caller hangs up first."""
+    try:
+        async with asyncio.timeout(seconds):
+            while (await request.receive())["type"] != "http.disconnect":
+                pass
+    except TimeoutError:
+        return False
+    return True
 
 
 def _prompt_words(body: dict[str, Any]) -> int:
@@ -91,8 +108,11 @@ class MockProvider:
             authorization=request.headers.get("authorization"),
         )
         self.requests.append(seen)
-        if behavior.first_byte_delay:
-            await asyncio.sleep(behavior.first_byte_delay)
+        # A stream sends its headers at once and waits before its first event instead.
+        waits = behavior.first_byte_delay and (behavior.status != 200 or not seen.stream)
+        if waits and await _hangs_up(request, behavior.first_byte_delay):
+            seen.disconnected = True
+            return Response(status_code=499)
         if behavior.status == 429:
             headers = {"retry-after": str(behavior.retry_after)} if behavior.retry_after else {}
             error = {"error": {"message": "rate limit reached", "type": "rate_limit_error"}}
@@ -103,8 +123,9 @@ class MockProvider:
         pieces = self._pieces(behavior, body.get("max_tokens"))
         if not seen.stream:
             seen.finished = True
-            return JSONResponse(self._completion(body, pieces))
-        return StreamingResponse(self._events(body, pieces, seen), media_type="text/event-stream")
+            return JSONResponse(self._completion(body, pieces, behavior))
+        events = self._events(body, pieces, seen, behavior)
+        return StreamingResponse(events, media_type="text/event-stream")
 
     def _pieces(self, behavior: Behavior, max_tokens: int | None) -> list[list[str]]:
         size = behavior.chunk_chars
@@ -115,9 +136,11 @@ class MockProvider:
             per_choice = [pieces[:max_tokens] for pieces in per_choice]
         return per_choice
 
-    def _usage(self, body: dict[str, Any], pieces: list[list[str]]) -> dict[str, int]:
+    def _usage(
+        self, body: dict[str, Any], pieces: list[list[str]], behavior: Behavior
+    ) -> dict[str, int]:
         prompt = _prompt_words(body)
-        completion = sum(len(p) for p in pieces) + len(self.behavior.tool_arguments or [])
+        completion = sum(len(p) for p in pieces) + len(behavior.tool_arguments or [])
         return {
             "prompt_tokens": prompt,
             "completion_tokens": completion,
@@ -133,7 +156,9 @@ class MockProvider:
             "system_fingerprint": f"fp_{self.name}",
         }
 
-    def _completion(self, body: dict[str, Any], pieces: list[list[str]]) -> dict[str, Any]:
+    def _completion(
+        self, body: dict[str, Any], pieces: list[list[str]], behavior: Behavior
+    ) -> dict[str, Any]:
         choices = [
             {
                 "index": index,
@@ -143,8 +168,8 @@ class MockProvider:
             for index, texts in enumerate(pieces)
         ]
         reply = {**self._envelope(body), "object": "chat.completion", "choices": choices}
-        if self.behavior.report_usage:
-            reply["usage"] = self._usage(body, pieces)
+        if behavior.report_usage:
+            reply["usage"] = self._usage(body, pieces, behavior)
         return reply
 
     def _event(self, body: dict[str, Any], choices: list[dict[str, Any]], **extra: Any) -> bytes:
@@ -152,28 +177,36 @@ class MockProvider:
         return f"data: {json.dumps(chunk)}\n\n".encode()
 
     async def _events(
-        self, body: dict[str, Any], pieces: list[list[str]], seen: Seen
+        self, body: dict[str, Any], pieces: list[list[str]], seen: Seen, behavior: Behavior
     ) -> AsyncIterator[bytes]:
         opening = {"role": "assistant", "content": ""}
+        sent = 0
         try:
+            if behavior.first_byte_delay:
+                await asyncio.sleep(behavior.first_byte_delay)
             yield self._event(body, [_choice(i, opening) for i in range(len(pieces))])
             for step in range(max((len(p) for p in pieces), default=0)):
                 for index, texts in enumerate(pieces):
-                    if step < len(texts):
-                        if self.behavior.token_interval:
-                            await asyncio.sleep(self.behavior.token_interval)
-                        yield self._event(body, [_choice(index, {"content": texts[step]})])
+                    if step >= len(texts):
+                        continue
+                    if sent == behavior.break_after:
+                        error = {"error": {"message": behavior.error_body, "type": "server_error"}}
+                        yield f"data: {json.dumps(error)}\n\n".encode()
+                        seen.finished = True
+                        return
+                    if behavior.token_interval:
+                        await asyncio.sleep(behavior.token_interval)
+                    yield self._event(body, [_choice(index, {"content": texts[step]})])
+                    sent += 1
             finish = "stop"
-            if self.behavior.tool_arguments:
+            if behavior.tool_arguments:
                 finish = "tool_calls"
                 yield self._event(body, [_choice(0, {"tool_calls": [_call("", name="lookup")]})])
-                for piece in self.behavior.tool_arguments:
+                for piece in behavior.tool_arguments:
                     yield self._event(body, [_choice(0, {"tool_calls": [_call(piece)]})])
             yield self._event(body, [_choice(i, {}, finish) for i in range(len(pieces))])
-            if self.behavior.report_usage and (body.get("stream_options") or {}).get(
-                "include_usage"
-            ):
-                yield self._event(body, [], usage=self._usage(body, pieces))
+            if behavior.report_usage and (body.get("stream_options") or {}).get("include_usage"):
+                yield self._event(body, [], usage=self._usage(body, pieces, behavior))
             yield b"data: [DONE]\n\n"
             seen.finished = True
         finally:
