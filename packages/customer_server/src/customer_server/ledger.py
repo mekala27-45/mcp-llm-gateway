@@ -97,9 +97,9 @@ class Ledger:
             )
         refund = Refund(f"RF-{len(self._refunds) + 1:06d}", customer_id, amount, reason, now)
         self._refunds.append(refund)
-        # JSON floats can be smaller than a cent, including subnormal values.
-        # Give subtraction enough precision for both fixed-point operands so a
-        # tiny accepted refund still reduces the balance instead of rounding away.
+        # An amount can be far smaller than a cent, down to 5e-324. The default
+        # decimal precision would round a refund that small away, so the
+        # subtraction gets enough digits for both numbers.
         with localcontext() as context:
             context.prec = len(format(balance, "f")) + len(format(amount, "f")) + 2
             self._refundable[customer_id] = balance - amount

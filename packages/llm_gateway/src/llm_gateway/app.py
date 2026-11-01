@@ -206,7 +206,7 @@ class LlmGateway:
             raise GatewayError(
                 "invalid_request", "invalid_n", "n must be a whole number above zero."
             )
-        # max_tokens applies to each completion; every requested choice consumes budget.
+        # max_tokens is per completion, so n completions can use n times as many tokens.
         return int(max(bounds)) * choices
 
     async def _serve(self, body: dict[str, Any], exchange: Exchange) -> Response:

@@ -145,7 +145,7 @@ async def test_positive_floats_are_refunded_without_rounding(
     assert record.structured_content["refundable_balance"] == expected_balance
 
 
-async def test_amount_above_old_cap_reaches_the_business_rule() -> None:
+async def test_a_large_amount_is_refused_by_the_balance_not_the_schema() -> None:
     async with Client(build_server()) as client:
         result = await client.call_tool("trigger_refund", {**VALID_REFUND, "amount": 5000.01})
     assert result.is_error
