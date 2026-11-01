@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-01T01:33:26+00:00",
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "cores": 2,
+    "memory_gb": 7.8,
+    "os": "Linux-6.18.44-fc-v185-x86_64-with-glibc2.39",
+    "python": "3.12.3"
+  },
+  "setting": "full",
+  "redactor": {
+    "prose_chunks_of_4": {
+      "mb_per_second": 3.1,
+      "largest_hold_chars": 8
+    },
+    "prose_chunks_of_16": {
+      "mb_per_second": 11.14,
+      "largest_hold_chars": 8
+    },
+    "prose_chunks_of_64": {
+      "mb_per_second": 35.58,
+      "largest_hold_chars": 8
+    },
+    "pii_every_150_chars_chunks_of_4": {
+      "mb_per_second": 0.77,
+      "largest_hold_chars": 25
+    },
+    "pii_every_150_chars_chunks_of_16": {
+      "mb_per_second": 1.05,
+      "largest_hold_chars": 25
+    },
+    "pii_every_150_chars_chunks_of_64": {
+      "mb_per_second": 0.86,
+      "largest_hold_chars": 25
+    }
+  },
+  "latency": {
+    "requests": 60,
+    "token_interval_ms": 20,
+    "characters_per_reply": 300,
+    "tokens_per_reply": 79,
+    "ttft_direct_ms": {
+      "p50": 22.08,
+      "p99": 24.7
+    },
+    "ttft_gateway_ms": {
+      "p50": 66.92,
+      "p99": 74.86
+    },
+    "added_delay_per_character_ms": {
+      "p50": 26.9,
+      "p99": 57.6
+    }
+  },
+  "memory": {
+    "stream_mb": 54.7,
+    "seconds": 4.0,
+    "gateway_rss_mb_before": 38.7,
+    "gateway_rss_mb_after": 39.3
+  }
+}
