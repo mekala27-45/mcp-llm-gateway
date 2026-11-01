@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -51,10 +52,15 @@ class Database:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         # isolation_level=None leaves transactions to BEGIN and COMMIT written out below.
         connection = await aiosqlite.connect(path, isolation_level=None)
-        await connection.execute("PRAGMA journal_mode=WAL")
-        await connection.execute("PRAGMA busy_timeout=5000")
-        await connection.execute("PRAGMA synchronous=NORMAL")
-        await connection.executescript(SCHEMA)
+        try:
+            await connection.execute("PRAGMA busy_timeout=5000")
+            await _use_wal(connection)
+            await connection.execute("PRAGMA synchronous=NORMAL")
+            await connection.executescript(SCHEMA)
+        except BaseException:
+            # The connection runs on its own thread, which would keep the process alive.
+            await connection.close()
+            raise
         return cls(connection)
 
     async def close(self) -> None:
@@ -83,3 +89,22 @@ class Database:
         async with self._lock:
             cursor = await self._connection.execute(sql, tuple(params))
             return [tuple(row) for row in await cursor.fetchall()]
+
+
+async def _use_wal(connection: aiosqlite.Connection) -> None:
+    """Switch the file to WAL. The switch needs the file to itself, and SQLite refuses it at
+    once rather than wait when another process is writing, which happens when two gateways
+    open a new file together. So it is retried, for as long as the busy timeout."""
+    async with asyncio.timeout(5):
+        while True:
+            try:
+                cursor = await connection.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc):
+                    raise
+                await asyncio.sleep(0.01)
+                continue
+            row = await cursor.fetchone()
+            if row is None or row[0] != "wal":
+                raise RuntimeError("this database file cannot use WAL mode")
+            return
