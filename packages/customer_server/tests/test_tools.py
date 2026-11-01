@@ -123,3 +123,41 @@ async def test_an_unexpected_failure_is_a_generic_internal_error(
     assert caught.value.message == "Internal error"
     assert caught.value.data is None
     assert any(record.exc_info for record in caplog.records)
+
+
+@pytest.mark.parametrize(
+    ("amount", "expected_amount", "expected_balance"),
+    [
+        (25.001, "25.001", "394.999"),
+        (1e-30, "0." + "0" * 29 + "1", "419." + "9" * 30),
+        (5e-324, "0." + "0" * 323 + "5", "419." + "9" * 323 + "5"),
+    ],
+)
+async def test_positive_floats_are_refunded_without_rounding(
+    amount: float, expected_amount: str, expected_balance: str
+) -> None:
+    async with Client(build_server()) as client:
+        refund = await client.call_tool("trigger_refund", {**VALID_REFUND, "amount": amount})
+        record = await client.call_tool("get_customer_record", {"customer_id": "CUST-10001"})
+    assert not refund.is_error
+    assert refund.structured_content["amount"] == expected_amount
+    assert refund.structured_content["refundable_balance"] == expected_balance
+    assert record.structured_content["refundable_balance"] == expected_balance
+
+
+async def test_amount_above_old_cap_reaches_the_business_rule() -> None:
+    async with Client(build_server()) as client:
+        result = await client.call_tool("trigger_refund", {**VALID_REFUND, "amount": 5000.01})
+    assert result.is_error
+    assert "refundable balance" in result.content[0].model_dump()["text"]
+
+
+async def test_distinct_subcent_refunds_do_not_share_a_replay_key() -> None:
+    async with Client(build_server()) as client:
+        first = await client.call_tool("trigger_refund", {**VALID_REFUND, "amount": 25.001})
+        second = await client.call_tool("trigger_refund", {**VALID_REFUND, "amount": 25.002})
+        replay = await client.call_tool("trigger_refund", {**VALID_REFUND, "amount": 25.001})
+    assert first.structured_content["refund_id"] != second.structured_content["refund_id"]
+    assert second.structured_content["refundable_balance"] == "369.997"
+    assert replay.structured_content["refund_id"] == first.structured_content["refund_id"]
+    assert replay.structured_content["refundable_balance"] == "369.997"

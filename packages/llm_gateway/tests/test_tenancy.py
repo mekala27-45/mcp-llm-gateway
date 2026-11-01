@@ -135,3 +135,28 @@ def test_the_request_log_keeps_the_route_and_never_the_content() -> None:
     assert log[0][:4] == ("primary", "primary:ok", "ok", 200)
     for content in (PROMPT[0]["content"], "ada.lindqvist", "4111 1111", "123-45-6789", key):
         assert content.encode() not in stored
+
+
+@pytest.mark.parametrize("value", [0, -1, True, "2", 1.5, None])
+def test_n_must_be_a_positive_whole_number(value: object) -> None:
+    with running_llm_stack() as stack:
+        reply = httpx.post(stack.url, json=chat(n=value), headers=stack.headers)
+        forwarded = len(stack.primary.requests)
+    assert reply.status_code == 400
+    assert reply.json()["error"]["code"] == "invalid_n"
+    assert forwarded == 0
+
+
+def test_multiple_completions_reserve_their_combined_token_budget() -> None:
+    with running_llm_stack() as stack:
+        reply = httpx.post(stack.url, json=chat(n=2, max_tokens=30_000), headers=stack.headers)
+        forwarded = len(stack.primary.requests)
+    assert reply.status_code == 413
+    assert reply.json()["error"]["code"] == "estimate_over_limit"
+    assert forwarded == 0
+
+
+def test_one_completion_keeps_the_original_budget() -> None:
+    with running_llm_stack() as stack:
+        reply = httpx.post(stack.url, json=chat(n=1, max_tokens=30_000), headers=stack.headers)
+    assert reply.status_code == 200

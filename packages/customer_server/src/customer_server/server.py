@@ -54,6 +54,12 @@ def _parse[ArgumentsT: BaseModel](model: type[ArgumentsT], arguments: dict[str, 
         raise _ArgumentsRejected(field_errors(exc)) from None
 
 
+def _amount_text(amount: Decimal) -> str:
+    """Keep every decimal digit, with at least two places for ordinary currency amounts."""
+    whole, _, fraction = format(amount, "f").partition(".")
+    return f"{whole}.{fraction.ljust(2, '0')}"
+
+
 def _ok(payload: dict[str, Any]) -> CallToolResult:
     return CallToolResult(
         content=[TextContent(type="text", text=json.dumps(payload))], structured_content=payload
@@ -169,14 +175,14 @@ class CustomerTools:
                 "email": customer.email,
                 "tier": customer.tier,
                 "customer_since": customer.customer_since,
-                "refundable_balance": f"{self._ledger.refundable(customer.customer_id):.2f}",
+                "refundable_balance": _amount_text(self._ledger.refundable(customer.customer_id)),
                 "currency": "USD",
             }
         )
 
     async def _trigger_refund(self, arguments: dict[str, Any]) -> CallToolResult:
         args = _parse(TriggerRefund, arguments)
-        amount = Decimal(repr(args.amount)).quantize(Decimal("0.01"))
+        amount = Decimal(repr(args.amount))
         try:
             refund, replayed = self._ledger.refund(args.customer_id, amount, args.reason)
         except UnknownCustomer:
@@ -187,11 +193,11 @@ class CustomerTools:
             {
                 "refund_id": refund.refund_id,
                 "customer_id": refund.customer_id,
-                "amount": f"{refund.amount:.2f}",
+                "amount": _amount_text(refund.amount),
                 "currency": "USD",
                 "status": "accepted",
                 "replayed": replayed,
-                "refundable_balance": f"{self._ledger.refundable(refund.customer_id):.2f}",
+                "refundable_balance": _amount_text(self._ledger.refundable(refund.customer_id)),
             }
         )
 

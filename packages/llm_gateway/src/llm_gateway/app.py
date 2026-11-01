@@ -201,7 +201,13 @@ class LlmGateway:
                     "invalid_max_tokens",
                     "max_tokens must be a whole number above zero.",
                 )
-        return int(max(bounds))
+        choices = body.get("n", 1)
+        if type(choices) is not int or choices < 1:
+            raise GatewayError(
+                "invalid_request", "invalid_n", "n must be a whole number above zero."
+            )
+        # max_tokens applies to each completion; every requested choice consumes budget.
+        return int(max(bounds)) * choices
 
     async def _serve(self, body: dict[str, Any], exchange: Exchange) -> Response:
         stream = body.get("stream") is True

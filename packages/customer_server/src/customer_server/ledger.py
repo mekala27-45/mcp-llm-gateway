@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 REPLAY_WINDOW_SECONDS = 60.0
 
@@ -97,5 +97,10 @@ class Ledger:
             )
         refund = Refund(f"RF-{len(self._refunds) + 1:06d}", customer_id, amount, reason, now)
         self._refunds.append(refund)
-        self._refundable[customer_id] = balance - amount
+        # JSON floats can be smaller than a cent, including subnormal values.
+        # Give subtraction enough precision for both fixed-point operands so a
+        # tiny accepted refund still reduces the balance instead of rounding away.
+        with localcontext() as context:
+            context.prec = len(format(balance, "f")) + len(format(amount, "f")) + 2
+            self._refundable[customer_id] = balance - amount
         return refund, False

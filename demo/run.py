@@ -58,11 +58,18 @@ async def task1() -> None:
         done = await client.call_tool("trigger_refund", REFUND)
         refund_id = (done.structured_content or {}).get("refund_id")
         say(1, f"refund of 25.00 for CUST-10001 accepted as {refund_id}")
+        precise = await client.call_tool("trigger_refund", {**REFUND, "amount": 25.001})
+        assert not precise.is_error
+        assert precise.structured_content["amount"] == "25.001"
+        assert precise.structured_content["refundable_balance"] == "369.999"
+        say(1, "refund of 25.001 accepted without rounding; remaining balance 369.999")
         try:
-            await client.call_tool("trigger_refund", {**REFUND, "amount": 25.001})
+            await client.call_tool("trigger_refund", {**REFUND, "amount": 0})
         except MCPError as refused:
             rules = ", ".join(f"{e['field']} {e['rule']}" for e in refused.data["errors"])
-            say(1, f"refund of 25.001 refused with {refused.code} {refused.message}: {rules}")
+            say(1, f"refund of 0 refused with {refused.code} {refused.message}: {rules}")
+        else:
+            raise AssertionError("a zero refund must be rejected")
 
 
 async def call_admin_tool(url: str, token: str) -> str:

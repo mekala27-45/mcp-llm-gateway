@@ -79,3 +79,12 @@ def test_an_unknown_validation_mode_stops_the_server_before_it_serves() -> None:
     assert finished.returncode == 2
     assert finished.stdout == b""
     assert b"VALIDATION_ERRORS must be protocol or tool" in finished.stderr
+
+
+def test_subcent_refund_preserves_precision_over_stdio(protocol_session: StdioSession) -> None:
+    refund = protocol_session.call(
+        "trigger_refund", {**VALID_REFUND, "customer_id": "CUST-10003", "amount": 25.001}
+    )
+    assert not refund.is_error
+    assert refund.structured_content["amount"] == "25.001"
+    assert refund.structured_content["refundable_balance"] == "50.499"
