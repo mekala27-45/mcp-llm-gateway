@@ -120,3 +120,9 @@ def test_the_hold_never_exceeds_the_longest_possible_match() -> None:
         assert redactor.held <= MAX_MATCH
     redactor.finish()
     assert 300 < redactor.largest_hold <= MAX_MATCH
+
+
+def test_a_card_followed_by_more_digits_is_still_found() -> None:
+    assert not luhn("4111111111111111123")
+    assert redact("pay 4111111111111111 123-45-6789") == f"pay {REDACTED} {REDACTED}"
+    assert redact("pay 4111 1111 1111 1111 7") == f"pay {REDACTED} 7"

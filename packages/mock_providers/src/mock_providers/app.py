@@ -46,6 +46,7 @@ class Behavior:
     choices: list[list[str]] | None = None
     tool_arguments: list[str] | None = None
     repeat: int = 1
+    chunk_chars: int | None = None
     retry_after: int | None = None
     error_body: str = LEAKY_ERROR
     report_usage: bool = True
@@ -106,7 +107,10 @@ class MockProvider:
         return StreamingResponse(self._events(body, pieces, seen), media_type="text/event-stream")
 
     def _pieces(self, behavior: Behavior, max_tokens: int | None) -> list[list[str]]:
-        per_choice = behavior.choices or [tokens(behavior.text) * behavior.repeat]
+        size = behavior.chunk_chars
+        text = behavior.text
+        base = [text[i : i + size] for i in range(0, len(text), size)] if size else tokens(text)
+        per_choice = behavior.choices or [base * behavior.repeat]
         if isinstance(max_tokens, int):
             per_choice = [pieces[:max_tokens] for pieces in per_choice]
         return per_choice

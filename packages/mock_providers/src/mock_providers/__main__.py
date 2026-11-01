@@ -16,12 +16,14 @@ def main() -> None:
     parser.add_argument("--status", type=int, default=200)
     parser.add_argument("--repeat", type=int, default=1, help="stream the text this many times")
     parser.add_argument("--text", help="text to stream instead of the default, which has PII in it")
+    parser.add_argument("--chunk-chars", type=int, help="fixed size content chunks, not tokens")
     args = parser.parse_args()
     behavior = Behavior(
         status=args.status,
         first_byte_delay=args.first_byte_delay_ms / 1000,
         token_interval=args.token_interval_ms / 1000,
         repeat=args.repeat,
+        chunk_chars=args.chunk_chars,
     )
     if args.text is not None:
         behavior.text = args.text
