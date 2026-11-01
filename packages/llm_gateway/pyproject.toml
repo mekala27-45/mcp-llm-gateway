@@ -5,10 +5,13 @@ description = "Tasks 3 and 4: an OpenAI compatible LLM gateway with streaming PI
 license = "Apache-2.0"
 requires-python = "==3.12.*"
 dependencies = [
+    "aiosqlite==0.22.1",
+    "anyio==4.15.1",
     "gateway-common",
     "httpx==0.28.1",
     "regex==2026.9.29",
     "starlette==1.10.0",
+    "tiktoken==0.14.0",
     "uvicorn==0.54.0",
 ]
 
