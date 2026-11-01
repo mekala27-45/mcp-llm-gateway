@@ -33,3 +33,12 @@ class TenantStore:
             "SELECT tenant_id FROM tenants WHERE key_hmac = ?", (self._digest(key),)
         )
         return str(rows[0][0]) if rows else None
+
+
+async def add_tenant(db_path: str, secret: str, tenant_id: str) -> str:
+    """Open the database, add one tenant and return its key."""
+    db = await Database.open(db_path)
+    try:
+        return await TenantStore(db, secret).add(tenant_id)
+    finally:
+        await db.close()

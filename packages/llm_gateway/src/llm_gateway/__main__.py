@@ -15,23 +15,14 @@ import uvicorn
 
 from gateway_common.logs import configure
 from llm_gateway.app import create_app
-from llm_gateway.db import Database
 from llm_gateway.settings import Settings, read_env_file
-from llm_gateway.tenants import TenantStore
+from llm_gateway.tenants import add_tenant
 
 
 def tenant_name(value: str) -> str:
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", value):
         raise argparse.ArgumentTypeError("use lower case letters, digits, - and _ (at most 64)")
     return value
-
-
-async def add_tenant(settings: Settings, tenant_id: str) -> str:
-    db = await Database.open(settings.db_path)
-    try:
-        return await TenantStore(db, settings.secret).add(tenant_id)
-    finally:
-        await db.close()
 
 
 def main() -> None:
@@ -48,7 +39,7 @@ def main() -> None:
     settings = Settings.from_env(env)
     if args.command == "add-tenant":
         try:
-            key = asyncio.run(add_tenant(settings, args.tenant_id))
+            key = asyncio.run(add_tenant(settings.db_path, settings.secret, args.tenant_id))
         except sqlite3.IntegrityError:
             parser.exit(1, f"tenant {args.tenant_id} already exists\n")
         print(key)

@@ -21,10 +21,9 @@ from starlette.routing import Mount
 
 from gateway_common.serving import background_server
 from llm_gateway.app import create_app
-from llm_gateway.db import Database
 from llm_gateway.limiter import wall_clock_ms
 from llm_gateway.settings import ProviderConfig, Settings
-from llm_gateway.tenants import TenantStore
+from llm_gateway.tenants import add_tenant
 from mock_providers.app import MockProvider
 
 SECRET = "llm-gateway-test-secret-0123456789abcdef"
@@ -53,17 +52,6 @@ class LlmStack:
         sql = "SELECT route, attempts, outcome, status, tokens FROM request_log ORDER BY rowid"
         eventually(lambda: len(self.rows(sql)) >= count)
         return self.rows(sql)
-
-
-def add_tenant(db_path: str, tenant_id: str) -> str:
-    async def add() -> str:
-        db = await Database.open(db_path)
-        try:
-            return await TenantStore(db, SECRET).add(tenant_id)
-        finally:
-            await db.close()
-
-    return asyncio.run(add())
 
 
 def eventually(condition: Callable[[], bool], timeout: float = 5.0) -> None:
@@ -109,7 +97,7 @@ def running_llm_stack(
             db_path=f"{scratch}/gateway.db",
         )
         settings = dataclasses.replace(settings, **overrides)
-        key = add_tenant(settings.db_path, "acme")
+        key = asyncio.run(add_tenant(settings.db_path, SECRET, "acme"))
         with background_server(create_app(settings, clock=clock)) as gateway_url:
             url = f"{gateway_url}/v1/chat/completions"
             yield LlmStack(url, primary, backup, settings, key)

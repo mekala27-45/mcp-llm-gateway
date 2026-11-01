@@ -7,7 +7,7 @@ import logging
 import sys
 import time
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, TextIO
 
 request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
 
@@ -36,9 +36,9 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, ensure_ascii=True, default=str)
 
 
-def configure(level: str = "INFO") -> None:
-    """Send every log record in the process to stderr as JSON."""
-    handler = logging.StreamHandler(sys.stderr)
+def configure(level: str = "INFO", stream: TextIO | None = None) -> None:
+    """Send every log record in the process to stderr, or to stream, as JSON."""
+    handler = logging.StreamHandler(stream or sys.stderr)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
     root.handlers[:] = [handler]

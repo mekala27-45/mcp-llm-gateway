@@ -19,4 +19,5 @@ jobs:
       - run: make lint
       - run: make typecheck
       - run: make test
+      - run: make demo
       - run: make bench-quick
