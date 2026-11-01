@@ -32,7 +32,9 @@ def test_non_finite_amounts_are_rejected(amount: float) -> None:
     assert ("amount", "finite_number") in rules(caught.value)
 
 
-@pytest.mark.parametrize("amount", [0.01, 1, 19.99, 4999.99, 5000])
+@pytest.mark.parametrize(
+    "amount", [5e-324, 0.001, 0.01, 1, 19.99, 25.001, 5000.01, 1.7976931348623157e308]
+)
 def test_amounts_at_the_edges_are_accepted(amount: float) -> None:
     TriggerRefund.model_validate({**VALID_REFUND, "amount": amount})
 
@@ -52,9 +54,13 @@ def test_an_unexpected_argument_is_named_only_if_it_looks_like_an_identifier() -
     assert fields == {"(unnamed argument)", "note"}
 
 
-def test_reason_is_stored_trimmed() -> None:
-    refund = TriggerRefund.model_validate({**VALID_REFUND, "reason": "  Duplicate charge  "})
-    assert refund.reason == "Duplicate charge"
+@pytest.mark.parametrize(
+    "reason",
+    ["0123456789", " " * 10, "  Duplicate charge  ", "x" * 501, "Duplicate\ncharge"],
+)
+def test_reason_with_at_least_ten_characters_is_preserved(reason: str) -> None:
+    refund = TriggerRefund.model_validate({**VALID_REFUND, "reason": reason})
+    assert refund.reason == reason
 
 
 def test_schemas_come_from_the_models_and_forbid_extra_properties() -> None:
@@ -65,4 +71,8 @@ def test_schemas_come_from_the_models_and_forbid_extra_properties() -> None:
     assert record_schema["properties"]["customer_id"]["pattern"] == "^CUST-[0-9]{5}$"
     assert refund_schema["properties"]["amount"]["type"] == "number"
     assert refund_schema["properties"]["amount"]["exclusiveMinimum"] == 0
+    assert "maximum" not in refund_schema["properties"]["amount"]
+    assert "multipleOf" not in refund_schema["properties"]["amount"]
+    assert refund_schema["properties"]["reason"]["minLength"] == 10
+    assert "maxLength" not in refund_schema["properties"]["reason"]
     assert refund_schema["required"] == ["customer_id", "amount", "reason"]
