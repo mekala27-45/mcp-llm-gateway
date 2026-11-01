@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
 import threading
 import time
@@ -10,6 +11,17 @@ from contextlib import contextmanager
 
 import uvicorn
 from starlette.types import ASGIApp
+
+
+class _Server(uvicorn.Server):
+    """uvicorn looks for a stop request every 100 ms. The tests start and stop a few hundred
+    servers, so this one looks every 10 ms."""
+
+    async def main_loop(self) -> None:
+        counter = 0
+        while not await self.on_tick(counter):
+            counter = (counter + 1) % 864_000
+            await asyncio.sleep(0.01)
 
 
 @contextmanager
@@ -22,7 +34,7 @@ def background_server(app: ASGIApp, port: int = 0) -> Iterator[str]:
     config = uvicorn.Config(
         app, log_config=None, access_log=False, lifespan="on", timeout_graceful_shutdown=2
     )
-    server = uvicorn.Server(config)
+    server = _Server(config)
     thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
     deadline = time.monotonic() + 15
