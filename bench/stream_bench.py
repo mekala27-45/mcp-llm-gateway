@@ -130,12 +130,12 @@ def redactor_alone(megabytes: int) -> dict[str, Any]:
 
 
 def first_token(
-    url: str, body: dict[str, Any], headers: dict[str, str]
+    client: httpx.Client, url: str, body: dict[str, Any], headers: dict[str, str]
 ) -> tuple[float, list[float]]:
     """Seconds to the first content, and the arrival time of every content character."""
     arrivals: list[float] = []
     started = time.perf_counter()
-    with httpx.stream("POST", url, json=body, headers=headers, timeout=60) as response:
+    with client.stream("POST", url, json=body, headers=headers) as response:
         for line in response.iter_lines():
             if not line.startswith("data: ") or line == "data: [DONE]":
                 continue
@@ -161,12 +161,18 @@ def latency(requests: int, env: dict[str, str], headers: dict[str, str]) -> dict
     body = {"model": "mock", "messages": [{"role": "user", "content": "status?"}], "stream": True}
     direct_url = f"http://127.0.0.1:{mock_port}/v1/chat/completions"
     gateway_url = f"http://127.0.0.1:{gateway_port}/v1/chat/completions"
-    with process(mock_args, mock_port, env), process(GATEWAY, gateway_port, gateway_env):
+    with (
+        process(mock_args, mock_port, env),
+        process(GATEWAY, gateway_port, gateway_env),
+        # One client with kept alive connections, so the times are the servers' and not the
+        # cost of setting up a client per request.
+        httpx.Client(timeout=60) as client,
+    ):
         for _ in range(3):
-            first_token(direct_url, body, {})
-            first_token(gateway_url, body, headers)
-        direct = [first_token(direct_url, body, {}) for _ in range(requests)]
-        gateway = [first_token(gateway_url, body, headers) for _ in range(requests)]
+            first_token(client, direct_url, body, {})
+            first_token(client, gateway_url, body, headers)
+        direct = [first_token(client, direct_url, body, {}) for _ in range(requests)]
+        gateway = [first_token(client, gateway_url, body, headers) for _ in range(requests)]
 
     direct_ttft = [ms(t) for t, _ in direct]
     gateway_ttft = [ms(t) for t, _ in gateway]
