@@ -1,0 +1,25 @@
+[project]
+name = "mcp-gateway"
+version = "1.0.0"
+description = "Task 2: an MCP security gateway in front of a Streamable HTTP server."
+license = "Apache-2.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "gateway-common",
+    "httpx==0.28.1",
+    "mcp==2.3.0",
+    "pyjwt==2.15.1",
+    "starlette==1.10.0",
+    "uvicorn==0.54.0",
+]
+
+[project.scripts]
+mcp-gateway = "mcp_gateway.__main__:main"
+mcp-gateway-token = "mcp_gateway.tokens:main"
+
+[tool.uv.sources]
+gateway-common = { workspace = true }
+
+[build-system]
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"
