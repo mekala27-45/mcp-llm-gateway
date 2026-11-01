@@ -17,7 +17,7 @@ def test_streams_chunks_as_they_arrive() -> None:
             lines = []
             for line in response.iter_lines():
                 lines.append(line)
-                if first_content_at is None and '"content": "Your' in line:
+                if first_content_at is None and text_of(chunks_of(iter([line]))):
                     first_content_at = time.monotonic() - started
         total = time.monotonic() - started
 

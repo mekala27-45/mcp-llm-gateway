@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -16,10 +17,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from gateway_common.logs import request_id
-from llm_gateway.errors import INTERNAL, UPSTREAM, GatewayError, error_response
+from gateway_common.logs import log_event, request_id
+from gateway_common.sse import EventTooLarge
+from llm_gateway.errors import INTERNAL, UPSTREAM, GatewayError, error_event, error_response
 from llm_gateway.providers import Provider
 from llm_gateway.settings import Settings
+from llm_gateway.stream import ChunkRewriter, UpstreamStreamError, redact_completion, rewrite_stream
 
 logger = logging.getLogger("llm_gateway")
 
@@ -46,14 +49,6 @@ async def _read_json(request: Request, limit: int) -> dict[str, Any]:
             "invalid_request", "invalid_messages", "messages must be a non-empty list."
         )
     return decoded
-
-
-async def _relay(reply: httpx.Response) -> AsyncIterator[bytes]:
-    try:
-        async for chunk in reply.aiter_raw():
-            yield chunk
-    finally:
-        await reply.aclose()
 
 
 class LlmGateway:
@@ -97,9 +92,32 @@ class LlmGateway:
             raise UPSTREAM
         headers = {"x-request-id": rid}
         if body.get("stream") is True:
-            return StreamingResponse(_relay(reply), media_type="text/event-stream", headers=headers)
-        payload = json.loads(await reply.aread())
+            stream = self._relay(reply, ChunkRewriter(), rid)
+            return StreamingResponse(stream, media_type="text/event-stream", headers=headers)
+        counts: Counter[str] = Counter()
+        payload = redact_completion(json.loads(await reply.aread()), counts)
+        log_event(logger, "completion", redactions=dict(counts))
         return JSONResponse(payload, headers=headers)
+
+    async def _relay(
+        self, reply: httpx.Response, rewriter: ChunkRewriter, rid: str
+    ) -> AsyncIterator[bytes]:
+        token = request_id.set(rid)
+        try:
+            async for piece in rewrite_stream(reply.aiter_raw(), rewriter):
+                yield piece
+        except (httpx.HTTPError, UpstreamStreamError, EventTooLarge):
+            log_event(logger, "stream broke", level=logging.WARNING)
+            yield error_event(UPSTREAM, rid)
+        finally:
+            await reply.aclose()
+            log_event(
+                logger,
+                "completion",
+                redactions=dict(rewriter.counts),
+                largest_hold=rewriter.largest_hold,
+            )
+            request_id.reset(token)
 
 
 async def _http_error(request: Request, exc: Exception) -> Response:

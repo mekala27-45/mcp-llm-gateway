@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from starlette.responses import JSONResponse
 
 STATUS = {
@@ -58,3 +60,8 @@ def error_response(error: GatewayError, request_id: str) -> JSONResponse:
     if error.kind == "unauthorized":
         headers["www-authenticate"] = 'Bearer realm="llm-gateway"'
     return JSONResponse(error.body(request_id), status_code=error.status, headers=headers)
+
+
+def error_event(error: GatewayError, request_id: str) -> bytes:
+    """The same error as a last SSE event, for a stream that has already started."""
+    return f"data: {json.dumps(error.body(request_id))}\n\n".encode()

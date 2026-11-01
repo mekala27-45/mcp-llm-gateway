@@ -39,6 +39,7 @@ dev = [
     "pytest-asyncio==1.4.1",
     "pytest-cov==7.1.0",
     "ruff==0.17.3",
+    "types-regex==2026.9.29.20261030",
 ]
 
 [tool.ruff]

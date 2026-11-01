@@ -7,6 +7,7 @@ requires-python = "==3.12.*"
 dependencies = [
     "gateway-common",
     "httpx==0.28.1",
+    "regex==2026.9.29",
     "starlette==1.10.0",
     "uvicorn==0.54.0",
 ]
