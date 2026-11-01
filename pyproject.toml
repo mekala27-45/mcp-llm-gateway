@@ -8,8 +8,10 @@ requires-python = "==3.12.*"
 dependencies = [
     "customer-server",
     "gateway-common",
+    "llm-gateway",
     "mcp-gateway",
     "mock-downstream",
+    "mock-providers",
 ]
 
 [tool.uv]
@@ -21,8 +23,10 @@ members = ["packages/*"]
 [tool.uv.sources]
 customer-server = { workspace = true }
 gateway-common = { workspace = true }
+llm-gateway = { workspace = true }
 mcp-gateway = { workspace = true }
 mock-downstream = { workspace = true }
+mock-providers = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -45,7 +49,14 @@ target-version = "py312"
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "ASYNC", "PT"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["customer_server", "gateway_common", "mcp_gateway", "mock_downstream"]
+known-first-party = [
+    "customer_server",
+    "gateway_common",
+    "llm_gateway",
+    "mcp_gateway",
+    "mock_downstream",
+    "mock_providers",
+]
 
 [tool.mypy]
 python_version = "3.12"
@@ -54,14 +65,25 @@ warn_unreachable = true
 
 [tool.pytest.ini_options]
 testpaths = ["packages"]
-pythonpath = ["packages/customer_server/tests", "packages/mcp_gateway/tests"]
+pythonpath = [
+    "packages/customer_server/tests",
+    "packages/llm_gateway/tests",
+    "packages/mcp_gateway/tests",
+]
 addopts = "-ra --strict-markers --import-mode=importlib"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 branch = true
-source_pkgs = ["customer_server", "gateway_common", "mcp_gateway", "mock_downstream"]
+source_pkgs = [
+    "customer_server",
+    "gateway_common",
+    "llm_gateway",
+    "mcp_gateway",
+    "mock_downstream",
+    "mock_providers",
+]
 patch = ["subprocess"]
 
 [tool.coverage.report]

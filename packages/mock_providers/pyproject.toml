@@ -1,0 +1,14 @@
+[project]
+name = "mock-providers"
+version = "1.0.0"
+description = "Mock OpenAI compatible streaming providers with controllable latency, errors and PII."
+license = "Apache-2.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "starlette==1.10.0",
+    "uvicorn==0.54.0",
+]
+
+[build-system]
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"

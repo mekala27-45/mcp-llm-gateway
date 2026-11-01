@@ -6,9 +6,11 @@ requires-python = "==3.12.*"
 members = [
     "customer-server",
     "gateway-common",
+    "llm-gateway",
     "mcp-gateway",
     "mcp-llm-gateway",
     "mock-downstream",
+    "mock-providers",
 ]
 
 [[package]]
@@ -448,6 +450,25 @@ wheels = [
 ]
 
 [[package]]
+name = "llm-gateway"
+version = "1.0.0"
+source = { editable = "packages/llm_gateway" }
+dependencies = [
+    { name = "gateway-common" },
+    { name = "httpx" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "gateway-common", editable = "packages/gateway_common" },
+    { name = "httpx", specifier = "==0.28.1" },
+    { name = "starlette", specifier = "==1.10.0" },
+    { name = "uvicorn", specifier = "==0.54.0" },
+]
+
+[[package]]
 name = "mcp"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -502,8 +523,10 @@ source = { virtual = "." }
 dependencies = [
     { name = "customer-server" },
     { name = "gateway-common" },
+    { name = "llm-gateway" },
     { name = "mcp-gateway" },
     { name = "mock-downstream" },
+    { name = "mock-providers" },
 ]
 
 [package.dev-dependencies]
@@ -523,8 +546,10 @@ dev = [
 requires-dist = [
     { name = "customer-server", editable = "packages/customer_server" },
     { name = "gateway-common", editable = "packages/gateway_common" },
+    { name = "llm-gateway", editable = "packages/llm_gateway" },
     { name = "mcp-gateway", editable = "packages/mcp_gateway" },
     { name = "mock-downstream", editable = "packages/mock_downstream" },
+    { name = "mock-providers", editable = "packages/mock_providers" },
 ]
 
 [package.metadata.requires-dev]
@@ -570,6 +595,21 @@ requires-dist = [
     { name = "anyio", specifier = "==4.15.1" },
     { name = "gateway-common", editable = "packages/gateway_common" },
     { name = "mcp", specifier = "==2.3.0" },
+    { name = "starlette", specifier = "==1.10.0" },
+    { name = "uvicorn", specifier = "==0.54.0" },
+]
+
+[[package]]
+name = "mock-providers"
+version = "1.0.0"
+source = { editable = "packages/mock_providers" }
+dependencies = [
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
     { name = "starlette", specifier = "==1.10.0" },
     { name = "uvicorn", specifier = "==0.54.0" },
 ]

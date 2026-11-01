@@ -1,0 +1,22 @@
+[project]
+name = "llm-gateway"
+version = "1.0.0"
+description = "Tasks 3 and 4: an OpenAI compatible LLM gateway with streaming PII redaction, token rate limits and failover."
+license = "Apache-2.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "gateway-common",
+    "httpx==0.28.1",
+    "starlette==1.10.0",
+    "uvicorn==0.54.0",
+]
+
+[project.scripts]
+llm-gateway = "llm_gateway.__main__:main"
+
+[tool.uv.sources]
+gateway-common = { workspace = true }
+
+[build-system]
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"
